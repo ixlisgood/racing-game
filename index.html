@@ -129,7 +129,7 @@ const N_SEG = 500;
 (function buildWorld() {
   const pts = trackCurve.getSpacedPoints(N_SEG);
   const frames = trackCurve.computeFrenetFrames(N_SEG, true);
-  const TW = 20, KW = 4;
+  const TW = 24, KW = 4;
 
   // ── Road ──
   const vpos = [], vuv = [], vidx = [];
@@ -177,7 +177,7 @@ const N_SEG = 500;
     const p = pts[ii], b = frames.binormals[ii], t = frames.tangents[ii];
     const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1,0,0), t.clone().normalize());
     [-1, 1].forEach((side, si) => {
-      const bp = new THREE.Vector3(p.x + b.x * side * 17, 0.6, p.z + b.z * side * 17);
+      const bp = new THREE.Vector3(p.x + b.x * side * 29, 0.6, p.z + b.z * side * 29);
       const seg = new THREE.Mesh(new THREE.BoxGeometry(5, 1.2, 0.9), i % 8 < 4 ? bMat : bMatR);
       seg.position.copy(bp);
       seg.quaternion.copy(q);
@@ -301,9 +301,9 @@ const AI_COLS  = [0xffffff, 0x0044cc, 0xff2200, 0xee3311, 0xff8800];
 const TOTAL_LAPS = 3;
 const MAX_SPD = 86, ACCEL = 28, BRAKEFORCE = 55, DRAG_K = 0.018, TURN = 1.55;
 const GEARS = [0, 18, 34, 50, 66, 80, MAX_SPD+5];
-const ROAD_HALF_WIDTH = 20.0;
-const ROAD_BARRIER_LIMIT = 23.5;
-const MODEL_YAW_OFFSET = Math.PI / 2;
+const ROAD_HALF_WIDTH = 24.0;
+const ROAD_BARRIER_LIMIT = 29.0;
+const MODEL_YAW_OFFSET = -Math.PI / 2;
 const trackCollisionOffset = new THREE.Vector3();
 const trackCollisionPush = new THREE.Vector3();
 const trackCollisionSide = new THREE.Vector3();
@@ -472,8 +472,8 @@ async function beginRace() {
   setLoad(90, 'PLACING CARS...');
   await new Promise(r => setTimeout(r, 20));
 
-  const startOffsets = [-11.5, -5.75, 0, 5.75, 11.5];
-  placeOnTrack(pState, startOffsets[2]);
+  const startOffsets = [-19, -11.5, -5.5, 5.5, 11.5, 19];
+  placeOnTrack(pState, startOffsets[3]);
   playerMesh.position.copy(pState.pos);
   playerMesh.rotation.y = pState.heading + MODEL_YAW_OFFSET;
 
@@ -620,9 +620,9 @@ async function buildPlayerCar(buffer) {
   // The GLB was exported from Marmoset with:
   //   - 100× scale baked in
   //   - Z-up convention (Y↔Z swap in matrix)
-  // Fix: scale and rotate so the model faces forward.
+  // Fix: scale and keep the baked model orientation; forward is handled via yaw offset.
   root.scale.setScalar(0.0600);
-  root.rotation.set(-Math.PI / 50, 0, 0);
+  root.rotation.set(0, 0, 0);
 
   playerTemplate = root;
   const wrapper = new THREE.Group();
