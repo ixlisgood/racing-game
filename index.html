@@ -617,7 +617,7 @@ async function buildPlayerCar(buffer) {
   //   - Z-up convention (Y↔Z swap in matrix)
   // Fix: scale and rotate so the model faces forward.
   root.scale.setScalar(0.0600);
-  root.rotation.set(-Math.PI / 10, 0, 0);
+  root.rotation.set(-Math.PI / 15, 0, 0);
 
   playerTemplate = root;
   const wrapper = new THREE.Group();
