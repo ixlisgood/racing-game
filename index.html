@@ -303,7 +303,7 @@ const MAX_SPD = 72, ACCEL = 22, BRAKEFORCE = 50, DRAG_K = 0.020, TURN = 1.65;
 const GEARS = [0, 15, 28, 43, 56, 68, MAX_SPD+5];
 const ROAD_HALF_WIDTH = 14.0;
 const ROAD_BARRIER_LIMIT = 17.0;
-const MODEL_YAW_OFFSET = -Math.PI / 2;
+const MODEL_YAW_OFFSET = Math.PI / 2;
 const trackCollisionOffset = new THREE.Vector3();
 const trackCollisionPush = new THREE.Vector3();
 const trackCollisionSide = new THREE.Vector3();
@@ -352,10 +352,22 @@ function physStep(s, dt, thr, brk, str) {
   s.steer += (str - s.steer) * Math.min(3.0 * dt, 1);
   if (str === 0) s.steer *= Math.max(0, 1 - 5.0 * dt);
   // Speed
-  const drag = s.speed * DRAG_K * s.speed;
-  s.speed = Math.max(0, Math.min(MAX_SPD, s.speed + (thr*ACCEL - brk*BRAKEFORCE - drag) * dt));
+  const drag = s.speed * DRAG_K * Math.abs(s.speed);
+  if (thr > 0) {
+    s.speed = Math.min(MAX_SPD, s.speed + ACCEL * dt);
+  } else if (brk > 0) {
+    if (s.speed > 0) {
+      s.speed = Math.max(-MAX_SPD * 0.4, s.speed - BRAKEFORCE * dt);
+    } else {
+      s.speed = Math.max(-MAX_SPD * 0.4, s.speed - BRAKEFORCE * dt);
+    }
+  } else {
+    s.speed *= Math.max(0, 1 - 4.5 * dt);
+    if (Math.abs(s.speed) < 0.2) s.speed = 0;
+  }
+  s.speed = Math.max(-MAX_SPD * 0.4, Math.min(MAX_SPD, s.speed - drag * dt));
   // Heading
-  if (s.speed > 0.5) s.heading += s.steer * TURN * (1 / (1 + s.speed * 0.045)) * dt * (s.speed / 16);
+  if (Math.abs(s.speed) > 0.5) s.heading += s.steer * TURN * (1 / (1 + Math.abs(s.speed) * 0.045)) * dt * (s.speed / 16);
   // Position
   s.pos.x += Math.sin(s.heading) * s.speed * dt;
   s.pos.z += Math.cos(s.heading) * s.speed * dt;
@@ -605,7 +617,7 @@ async function buildPlayerCar(buffer) {
   //   - Z-up convention (Y↔Z swap in matrix)
   // Fix: scale and rotate so the model faces forward.
   root.scale.setScalar(0.065);
-  root.rotation.set(-Math.PI / 2, -Math.PI / 2, 0);
+  root.rotation.set(-Math.PI / 2, 0, 0);
 
   playerTemplate = root;
   const wrapper = new THREE.Group();
