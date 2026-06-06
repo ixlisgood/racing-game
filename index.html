@@ -16,14 +16,7 @@ body{background:#000;overflow:hidden;font-family:'Orbitron',monospace}
 #load-bar{height:100%;background:#e10600;border-radius:1px;width:0%;transition:width 0.3s}
 #load-msg{color:#444;font-size:11px;letter-spacing:2px;margin-top:14px}
 
-#file-picker{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:10px}
-#file-picker label{
-  display:block;padding:10px 28px;border:1px solid #e10600;border-radius:4px;
-  color:#e10600;font-size:12px;letter-spacing:2px;cursor:pointer;transition:background 0.2s;
-}
-#file-picker label:hover{background:rgba(225,6,0,0.12)}
-#file-picker input{display:none}
-#file-picker span{font-size:10px;color:#444;letter-spacing:1px}
+
 
 #hud{display:none;position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:10}
 #lap-badge{position:fixed;top:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.82);border:1px solid #e10600;padding:6px 24px;border-radius:3px;text-align:center;color:#fff;font-size:11px;letter-spacing:3px}
@@ -58,13 +51,7 @@ body{background:#000;overflow:hidden;font-family:'Orbitron',monospace}
 
 <div id="loading">
   <h1>F1 RACING</h1>
-  <p>LOAD YOUR CAR MODEL</p>
-  <div id="file-picker">
-    <label for="glb-input">📁 SELECT .GLB FILE
-      <input type="file" id="glb-input" accept=".glb">
-    </label>
-    <span>— or place sportcar_017.glb in the same folder and it loads automatically —</span>
-  </div>
+  <p>LOADING CAR...</p>
   <div id="load-bar-wrap" style="margin-top:20px"><div id="load-bar"></div></div>
   <div id="load-msg"></div>
 </div>
@@ -113,7 +100,9 @@ sun.shadow.camera.left   = -600; sun.shadow.camera.right  =  600;
 sun.shadow.camera.bottom = -600; sun.shadow.camera.top    =  600;
 sun.shadow.camera.near   = 1;    sun.shadow.camera.far    = 2000;
 scene.add(sun);
-scene.add(Object.assign(new THREE.DirectionalLight(0xb0c8ff, 0.4), { position: new THREE.Vector3(-200, 80, -100) }));
+const fill = new THREE.DirectionalLight(0xb0c8ff, 0.4);
+fill.position.set(-200, 80, -100);
+scene.add(fill);
 
 // ── Ground ──────────────────────────────────────────────────────────────────
 const gnd = new THREE.Mesh(
@@ -558,32 +547,18 @@ async function buildPlayerCar(buffer) {
   startCountdown();
 }
 
-// ── File input handler ────────────────────────────────────────────────────────
-document.getElementById('glb-input').addEventListener('change', async e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  setLoad(10, 'READING FILE...');
-  document.getElementById('file-picker').style.display = 'none';
-  const buf = await file.arrayBuffer();
-  setLoad(40, 'FILE LOADED');
-  await buildPlayerCar(buf);
-});
-
-// ── Auto-load if served from a local web server (fetch sportcar_017.glb) ─────
-// Only attempt fetch if not on file:// protocol (needs a server)
+// ── Load car.glb automatically ───────────────────────────────────────────────
 (async () => {
-  if (location.protocol !== 'file:') {
-    try {
-      setLoad(5, 'LOOKING FOR sportcar_017.glb...');
-      const res = await fetch('./sportcar_017.glb');
-      if (res.ok) {
-        document.getElementById('file-picker').style.display = 'none';
-        setLoad(30, 'LOADING sportcar_017.glb...');
-        const buf = await res.arrayBuffer();
-        setLoad(45, 'MODEL LOADED');
-        await buildPlayerCar(buf);
-      }
-    } catch(e) { /* not found, user will pick */ }
+  try {
+    setLoad(10, 'FETCHING car.glb...');
+    const res = await fetch('./car.glb');
+    if (!res.ok) throw new Error('car.glb not found');
+    setLoad(40, 'MODEL LOADED');
+    const buf = await res.arrayBuffer();
+    await buildPlayerCar(buf);
+  } catch(e) {
+    document.getElementById('load-msg').textContent = 'ERROR: car.glb not found in repo root';
+    console.error(e);
   }
 })();
 
