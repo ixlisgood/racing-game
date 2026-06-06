@@ -84,111 +84,118 @@ const firebaseConfig = {
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
-
-// Sign in anonymously
 firebase.auth().signInAnonymously().catch(err => console.error('Auth error:', err));
 
-// ── Multiplayer State ────────────────────────────────────────────────────────
+// ── Multiplayer State (initialized later) ────────────────────────────────────
 let playerId = 'player_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 let otherPlayers = new Map();
-const playerDataRef = database.ref('players');
+let playerDataRef = null;
+let firebaseReady = false;
 
-function publishPlayerState() {
-  playerDataRef.child(playerId).set({
-    pos: { x: pState.pos.x, y: pState.pos.y, z: pState.pos.z },
-    heading: pState.heading,
-    speed: pState.speed,
-    gear: pState.gear,
-    rpm: pState.rpm,
-    timestamp: firebase.database.ServerValue.TIMESTAMP
-  }).catch(err => console.error('Publish error:', err));
-}
-
-function updateOtherPlayers(snapshot) {
-  const playersData = snapshot.val() || {};
-
-  for (const id in playersData) {
-    if (id === playerId) continue;
-    const data = playersData[id];
-    if (Date.now() - data.timestamp > 3000) continue;
-
-    if (!otherPlayers.has(id)) {
-      const carGroup = new THREE.Group();
-      const bm = new THREE.MeshStandardMaterial({ 
-        color: Math.random() * 0xffffff, 
-        metalness: 0.6, 
-        roughness: 0.3 
-      });
-      const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.38, 4.4), bm);
-      body.position.y = 0.28;
-      carGroup.add(body);
-      
-      const pod = new THREE.Mesh(
-        new THREE.BoxGeometry(0.7, 0.42, 2),
-        new THREE.MeshStandardMaterial({ color: 0x111111 })
-      );
-      pod.position.set(0, 0.62, 0.15);
-      carGroup.add(pod);
-      
-      const wheels = [];
-      const wgeo = new THREE.CylinderGeometry(0.37, 0.37, 0.44, 10);
-      const wmat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
-      const wheelPos = [[0.93,0.37,1.55],[-0.93,0.37,1.55],[0.93,0.37,-1.55],[-0.93,0.37,-1.55]];
-      
-      wheelPos.forEach(pos => {
-        const w = new THREE.Mesh(wgeo, wmat);
-        w.rotation.z = Math.PI / 2;
-        w.position.set(...pos);
-        carGroup.add(w);
-        wheels.push(w);
-      });
-
-      carGroup.traverse(c => {
-        if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; }
-      });
-
-      scene.add(carGroup);
-      otherPlayers.set(id, {
-        mesh: carGroup,
-        wheels: wheels,
-        lastUpdate: Date.now(),
-        smoothPos: new THREE.Vector3(data.pos.x, data.pos.y, data.pos.z),
-        smoothHeading: data.heading,
-        data: data
-      });
-    }
-
-    const player = otherPlayers.get(id);
-    player.data = data;
-    player.lastUpdate = Date.now();
-    
-    const targetPos = new THREE.Vector3(data.pos.x, data.pos.y, data.pos.z);
-    player.smoothPos.lerp(targetPos, 0.15);
-    player.mesh.position.copy(player.smoothPos);
-    
-    let headingDiff = data.heading - player.smoothHeading;
-    while (headingDiff > Math.PI) headingDiff -= Math.PI * 2;
-    while (headingDiff < -Math.PI) headingDiff += Math.PI * 2;
-    player.smoothHeading += headingDiff * 0.15;
-    player.mesh.rotation.y = player.smoothHeading + MODEL_YAW_OFFSET;
-    
-    const ds = data.speed * 0.016 * 2.5;
-    player.wheels.forEach(w => w.rotation.x += ds);
+function initFirebase() {
+  playerDataRef = database.ref('players');
+  
+  function publishPlayerState() {
+    if (!playerDataRef) return;
+    playerDataRef.child(playerId).set({
+      pos: { x: pState.pos.x, y: pState.pos.y, z: pState.pos.z },
+      heading: pState.heading,
+      speed: pState.speed,
+      gear: pState.gear,
+      rpm: pState.rpm,
+      timestamp: firebase.database.ServerValue.TIMESTAMP
+    }).catch(err => console.error('Publish error:', err));
   }
 
-  for (const [id, player] of otherPlayers) {
-    if (Date.now() - player.lastUpdate > 4000) {
-      scene.remove(player.mesh);
-      otherPlayers.delete(id);
+  function updateOtherPlayers(snapshot) {
+    const playersData = snapshot.val() || {};
+    for (const id in playersData) {
+      if (id === playerId) continue;
+      const data = playersData[id];
+      if (Date.now() - data.timestamp > 3000) continue;
+
+      if (!otherPlayers.has(id)) {
+        const carGroup = new THREE.Group();
+        const bm = new THREE.MeshStandardMaterial({ 
+          color: Math.random() * 0xffffff, 
+          metalness: 0.6, 
+          roughness: 0.3 
+        });
+        const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.38, 4.4), bm);
+        body.position.y = 0.28;
+        carGroup.add(body);
+        
+        const pod = new THREE.Mesh(
+          new THREE.BoxGeometry(0.7, 0.42, 2),
+          new THREE.MeshStandardMaterial({ color: 0x111111 })
+        );
+        pod.position.set(0, 0.62, 0.15);
+        carGroup.add(pod);
+        
+        const wheels = [];
+        const wgeo = new THREE.CylinderGeometry(0.37, 0.37, 0.44, 10);
+        const wmat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
+        const wheelPos = [[0.93,0.37,1.55],[-0.93,0.37,1.55],[0.93,0.37,-1.55],[-0.93,0.37,-1.55]];
+        
+        wheelPos.forEach(pos => {
+          const w = new THREE.Mesh(wgeo, wmat);
+          w.rotation.z = Math.PI / 2;
+          w.position.set(...pos);
+          carGroup.add(w);
+          wheels.push(w);
+        });
+
+        carGroup.traverse(c => {
+          if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; }
+        });
+
+        scene.add(carGroup);
+        otherPlayers.set(id, {
+          mesh: carGroup,
+          wheels: wheels,
+          lastUpdate: Date.now(),
+          smoothPos: new THREE.Vector3(data.pos.x, data.pos.y, data.pos.z),
+          smoothHeading: data.heading,
+          data: data
+        });
+      }
+
+      const player = otherPlayers.get(id);
+      player.data = data;
+      player.lastUpdate = Date.now();
+      
+      const targetPos = new THREE.Vector3(data.pos.x, data.pos.y, data.pos.z);
+      player.smoothPos.lerp(targetPos, 0.15);
+      player.mesh.position.copy(player.smoothPos);
+      
+      let headingDiff = data.heading - player.smoothHeading;
+      while (headingDiff > Math.PI) headingDiff -= Math.PI * 2;
+      while (headingDiff < -Math.PI) headingDiff += Math.PI * 2;
+      player.smoothHeading += headingDiff * 0.15;
+      player.mesh.rotation.y = player.smoothHeading + MODEL_YAW_OFFSET;
+      
+      const ds = data.speed * 0.016 * 2.5;
+      player.wheels.forEach(w => w.rotation.x += ds);
+    }
+
+    for (const [id, player] of otherPlayers) {
+      if (Date.now() - player.lastUpdate > 4000) {
+        scene.remove(player.mesh);
+        otherPlayers.delete(id);
+      }
     }
   }
-}
 
-playerDataRef.on('value', updateOtherPlayers);
+  playerDataRef.on('value', updateOtherPlayers);
+  window.publishPlayerState = publishPlayerState;
+  firebaseReady = true;
+}
 
 window.addEventListener('beforeunload', () => {
-  playerDataRef.child(playerId).remove();
-  playerDataRef.off('value', updateOtherPlayers);
+  if (playerDataRef) {
+    playerDataRef.child(playerId).remove();
+    playerDataRef.off();
+  }
 });
 
 
@@ -543,6 +550,9 @@ async function beginDrive() {
   setLoad(100, 'READY!');
   await new Promise(r => setTimeout(r, 350));
 
+  // Initialize Firebase after scene is ready
+  initFirebase();
+
   document.getElementById('loading').style.display = 'none';
   document.getElementById('hud').style.display = 'block';
   ready = true;
@@ -691,8 +701,8 @@ function animate() {
     physStep(pState, dt, thr, brk, str);
 
     // Publish position every 100ms
-    if (!window.lastPublish || Date.now() - window.lastPublish > 100) {
-      publishPlayerState();
+    if (firebaseReady && (!window.lastPublish || Date.now() - window.lastPublish > 100)) {
+      window.publishPlayerState();
       window.lastPublish = Date.now();
     }
 
