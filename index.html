@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>F1 Racing</title>
+<title>Freeplay Driving</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#000;overflow:hidden;font-family:'Orbitron',monospace}
@@ -38,19 +38,18 @@ body{background:#000;overflow:hidden;font-family:'Orbitron',monospace}
 #hints{position:fixed;top:18px;left:18px;background:rgba(0,0,0,0.7);border:1px solid #111;border-radius:6px;padding:9px 13px;font-size:10px;color:#555;letter-spacing:1px;line-height:2}
 #rpm-wrap{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:3px}
 .rs{width:18px;height:7px;border-radius:1px;background:#111}
-#go{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:100px;font-weight:900;color:#e10600;pointer-events:none;opacity:0;transition:opacity 0.4s;text-shadow:0 0 40px rgba(225,6,0,0.6)}
-#fin{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.95);border:1px solid #e10600;border-radius:10px;padding:40px 56px;text-align:center;z-index:100;pointer-events:all}
-#fin h1{font-size:44px;color:#e10600;margin-bottom:10px}
-#fin p{font-size:18px;color:#fff;margin:5px 0}
-#fin button{margin-top:22px;padding:11px 30px;background:#e10600;color:#fff;border:none;border-radius:5px;font-family:inherit;font-size:14px;cursor:pointer;letter-spacing:2px}
+
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebaseapp/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebaseapp/8.10.1/firebase-database.js"></script>
+<script src="https://www.gstatic.com/firebaseapp/8.10.1/firebase-auth.js"></script>
 </head>
 <body>
 <canvas id="c"></canvas>
 
 <div id="loading">
-  <h1>F1 RACING</h1>
+  <h1>FREEPLAY</h1>
   <p>LOADING CAR...</p>
   <div id="load-bar-wrap" style="margin-top:20px"><div id="load-bar"></div></div>
   <div id="load-msg"></div>
@@ -58,9 +57,6 @@ body{background:#000;overflow:hidden;font-family:'Orbitron',monospace}
 
 <div id="hud">
   <div id="hints">W/↑ &nbsp;ACCEL<br>S/↓ &nbsp;BRAKE<br>A/← &nbsp;LEFT<br>D/→ &nbsp;RIGHT<br>C &nbsp;&nbsp;&nbsp;&nbsp;CAM</div>
-  <div id="lap-badge">LAP<span id="lap-n">1 / 3</span></div>
-  <div id="pos-box"><h3>POSITIONS</h3><div id="pos-list"></div></div>
-  <div id="times"><div id="t-lbl">LAP TIME</div><div id="t-cur">0:00.000</div><div id="t-best">BEST: --:--.---</div></div>
   <div id="speedo"><div id="spd">0</div><div id="spd-u">KM/H</div><div id="gear">N</div></div>
   <div id="rpm-wrap"></div>
 </div>
@@ -74,7 +70,128 @@ body{background:#000;overflow:hidden;font-family:'Orbitron',monospace}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 
-// ── Renderer ────────────────────────────────────────────────────────────────
+// ── Firebase Configuration ────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyDQnpISs7KyB4J5ZSCB0dQILf7nJfnMX1M",
+  authDomain: "f1-racing-75b1f.firebaseapp.com",
+  databaseURL: "https://f1-racing-75b1f-default-rtdb.firebaseio.com",
+  projectId: "f1-racing-75b1f",
+  storageBucket: "f1-racing-75b1f.appspot.com",
+  messagingSenderId: "571191843843",
+  appId: "1:571191843843:web:ea60f29f5e7a4c54fa0c52"
+};
+
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const database = firebase.database();
+
+// Sign in anonymously
+firebase.auth().signInAnonymously().catch(err => console.error('Auth error:', err));
+
+// ── Multiplayer State ────────────────────────────────────────────────────────
+let playerId = 'player_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+let otherPlayers = new Map();
+const playerDataRef = database.ref('players');
+
+function publishPlayerState() {
+  playerDataRef.child(playerId).set({
+    pos: { x: pState.pos.x, y: pState.pos.y, z: pState.pos.z },
+    heading: pState.heading,
+    speed: pState.speed,
+    gear: pState.gear,
+    rpm: pState.rpm,
+    timestamp: firebase.database.ServerValue.TIMESTAMP
+  }).catch(err => console.error('Publish error:', err));
+}
+
+function updateOtherPlayers(snapshot) {
+  const playersData = snapshot.val() || {};
+
+  for (const id in playersData) {
+    if (id === playerId) continue;
+    const data = playersData[id];
+    if (Date.now() - data.timestamp > 3000) continue;
+
+    if (!otherPlayers.has(id)) {
+      const carGroup = new THREE.Group();
+      const bm = new THREE.MeshStandardMaterial({ 
+        color: Math.random() * 0xffffff, 
+        metalness: 0.6, 
+        roughness: 0.3 
+      });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.38, 4.4), bm);
+      body.position.y = 0.28;
+      carGroup.add(body);
+      
+      const pod = new THREE.Mesh(
+        new THREE.BoxGeometry(0.7, 0.42, 2),
+        new THREE.MeshStandardMaterial({ color: 0x111111 })
+      );
+      pod.position.set(0, 0.62, 0.15);
+      carGroup.add(pod);
+      
+      const wheels = [];
+      const wgeo = new THREE.CylinderGeometry(0.37, 0.37, 0.44, 10);
+      const wmat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
+      const wheelPos = [[0.93,0.37,1.55],[-0.93,0.37,1.55],[0.93,0.37,-1.55],[-0.93,0.37,-1.55]];
+      
+      wheelPos.forEach(pos => {
+        const w = new THREE.Mesh(wgeo, wmat);
+        w.rotation.z = Math.PI / 2;
+        w.position.set(...pos);
+        carGroup.add(w);
+        wheels.push(w);
+      });
+
+      carGroup.traverse(c => {
+        if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; }
+      });
+
+      scene.add(carGroup);
+      otherPlayers.set(id, {
+        mesh: carGroup,
+        wheels: wheels,
+        lastUpdate: Date.now(),
+        smoothPos: new THREE.Vector3(data.pos.x, data.pos.y, data.pos.z),
+        smoothHeading: data.heading,
+        data: data
+      });
+    }
+
+    const player = otherPlayers.get(id);
+    player.data = data;
+    player.lastUpdate = Date.now();
+    
+    const targetPos = new THREE.Vector3(data.pos.x, data.pos.y, data.pos.z);
+    player.smoothPos.lerp(targetPos, 0.15);
+    player.mesh.position.copy(player.smoothPos);
+    
+    let headingDiff = data.heading - player.smoothHeading;
+    while (headingDiff > Math.PI) headingDiff -= Math.PI * 2;
+    while (headingDiff < -Math.PI) headingDiff += Math.PI * 2;
+    player.smoothHeading += headingDiff * 0.15;
+    player.mesh.rotation.y = player.smoothHeading + MODEL_YAW_OFFSET;
+    
+    const ds = data.speed * 0.016 * 2.5;
+    player.wheels.forEach(w => w.rotation.x += ds);
+  }
+
+  for (const [id, player] of otherPlayers) {
+    if (Date.now() - player.lastUpdate > 4000) {
+      scene.remove(player.mesh);
+      otherPlayers.delete(id);
+    }
+  }
+}
+
+playerDataRef.on('value', updateOtherPlayers);
+
+window.addEventListener('beforeunload', () => {
+  playerDataRef.child(playerId).remove();
+  playerDataRef.off('value', updateOtherPlayers);
+});
+
+
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -296,9 +413,6 @@ function parseGLB(buffer) {
 }
 
 // ── Car physics ───────────────────────────────────────────────────────────────
-const AI_NAMES = ['HAM','VER','LEC','ALO','NOR'];
-const AI_COLS  = [0xffffff, 0x0044cc, 0xff2200, 0xee3311, 0xff8800];
-const TOTAL_LAPS = 3;
 const MAX_SPD = 86, ACCEL = 28, BRAKEFORCE = 55, DRAG_K = 0.018, TURN = 1.55;
 const GEARS = [0, 18, 34, 50, 66, 80, MAX_SPD+5];
 const ROAD_HALF_WIDTH = 24.0;
@@ -322,18 +436,14 @@ function applyTrackCollision(s) {
   if (absOffset > ROAD_BARRIER_LIMIT) s.speed *= 0.2;
 }
 
-function mkState(tOff, aiIdx) {
+function mkState(tOff) {
   return {
     pos: new THREE.Vector3(), heading: 0, speed: 0, steer: 0,
-    trackT: tOff, lap: 0, lapTime: 0, bestLap: Infinity, lastT: tOff,
-    finished: false, isAI: aiIdx!==undefined, aiIdx,
-    name: aiIdx!==undefined ? AI_NAMES[aiIdx] : 'YOU',
-    gear: 1, rpm: 0.1, wSpin: 0
+    trackT: tOff, gear: 1, rpm: 0.1, wSpin: 0, lastT: tOff
   };
 }
 
-const pState   = mkState(0.0);
-const aiStates = AI_NAMES.map((_, i) => mkState(0.0, i));
+const pState = mkState(0.0);
 
 function findT(pos, lastT) {
   const STEP = 1/N_SEG;
@@ -347,7 +457,6 @@ function findT(pos, lastT) {
 }
 
 function physStep(s, dt, thr, brk, str) {
-  if (s.finished) return;
   // Steering
   s.steer += (str - s.steer) * Math.min(3.0 * dt, 1);
   if (str === 0) s.steer *= Math.max(0, 1 - 6.0 * dt);
@@ -384,28 +493,6 @@ function physStep(s, dt, thr, brk, str) {
   // Track progress
   s.trackT = findT(s.pos, s.trackT);
   applyTrackCollision(s);
-  // Lap detection: crossing 0 from > 0.88
-  if (s.lastT > 0.88 && s.trackT < 0.12) {
-    s.lap++;
-    if (s.lapTime > 0 && s.lapTime < s.bestLap) s.bestLap = s.lapTime;
-    s.lapTime = 0;
-    if (!s.isAI && s.lap >= TOTAL_LAPS) { s.finished = true; endRace(); }
-    if (s.isAI  && s.lap >= TOTAL_LAPS)   s.finished = true;
-  }
-  s.lastT = s.trackT;
-  s.lapTime += dt;
-}
-
-function aiStep(s, dt) {
-  const look = (s.trackT + 0.032) % 1;
-  const tgt  = trackCurve.getPointAt(look);
-  let hd = Math.atan2(tgt.x - s.pos.x, tgt.z - s.pos.z) - s.heading;
-  while (hd >  Math.PI) hd -= Math.PI*2;
-  while (hd < -Math.PI) hd += Math.PI*2;
-  const str  = Math.max(-1, Math.min(1, hd * 2.8));
-  const curv = Math.abs(str);
-  const tspd = MAX_SPD * (1 - curv*0.40) * (0.70 + (s.aiIdx||0) * 0.015);
-  physStep(s, dt, s.speed < tspd ? 0.9 : 0, s.speed > tspd+5 ? 0.65 : 0, str);
 }
 
 // ── AI car proxy mesh ─────────────────────────────────────────────────────────
@@ -444,9 +531,28 @@ function cloneCarModel(template, color) {
   return clone;
 }
 
-function mkAICar(col) {
+async function beginDrive() {
+  setLoad(90, 'POSITIONING CAR...');
+  await new Promise(r => setTimeout(r, 20));
+
+  const startOffset = -5.5;
+  placeOnTrack(pState, startOffset);
+  playerMesh.position.copy(pState.pos);
+  playerMesh.rotation.y = pState.heading + MODEL_YAW_OFFSET;
+
+  setLoad(100, 'READY!');
+  await new Promise(r => setTimeout(r, 350));
+
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('hud').style.display = 'block';
+  ready = true;
+}
+
+async function buildFallbackPlayerCar() {
+  setLoad(60, 'USING FALLBACK CAR...');
+  await new Promise(r => setTimeout(r, 20));
   const g = new THREE.Group();
-  const bm = new THREE.MeshStandardMaterial({ color: col, metalness: 0.6, roughness: 0.3 });
+  const bm = new THREE.MeshStandardMaterial({ color: 0xe10600, metalness: 0.6, roughness: 0.3 });
   const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.38, 4.4), bm);
   body.position.y = 0.28; g.add(body);
   const pod = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.42, 2), new THREE.MeshStandardMaterial({ color: 0x111111 }));
@@ -461,57 +567,16 @@ function mkAICar(col) {
     const w = new THREE.Mesh(wgeo, wmat); w.rotation.z = Math.PI/2; w.position.set(...p); g.add(w); return w;
   });
   g.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
-  return { group: g, wheels: ws };
-}
-
-function mkFallbackPlayerCar() {
-  return mkAICar(0xe10600);
-}
-
-async function beginRace() {
-  setLoad(90, 'PLACING CARS...');
-  await new Promise(r => setTimeout(r, 20));
-
-  const startOffsets = [-19, -11.5, -5.5, 5.5, 11.5, 19];
-  placeOnTrack(pState, startOffsets[3]);
-  playerMesh.position.copy(pState.pos);
-  playerMesh.rotation.y = pState.heading + MODEL_YAW_OFFSET;
-
-  for (let i = 0; i < AI_NAMES.length; i++) {
-    const wrapper = new THREE.Group();
-    wrapper.rotation.y = aiStates[i].heading + MODEL_YAW_OFFSET;
-    wrapper.add(cloneCarModel(playerTemplate, AI_COLS[i]));
-    scene.add(wrapper);
-    const wheels = ['WheelFL','WheelFR','WheelRL','WheelRR'].map(name => wrapper.getObjectByName(name)).filter(Boolean);
-    aiCars.push({ group: wrapper, wheels });
-    placeOnTrack(aiStates[i], startOffsets[i]);
-    wrapper.position.copy(aiStates[i].pos);
-  }
-
-  setLoad(100, 'READY!');
-  await new Promise(r => setTimeout(r, 350));
-
-  document.getElementById('loading').style.display = 'none';
-  document.getElementById('hud').style.display = 'block';
-  ready = true;
-  startCountdown();
-}
-
-async function buildFallbackPlayerCar() {
-  setLoad(60, 'USING FALLBACK CAR...');
-  await new Promise(r => setTimeout(r, 20));
-  const { group, wheels } = mkFallbackPlayerCar();
-  scene.add(group);
-  playerMesh = group;
-  playerWheels = wheels;
-  await beginRace();
+  scene.add(g);
+  playerMesh = g;
+  playerWheels = ws;
+  await beginDrive();
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let playerTemplate = null;
-let playerMesh = null, playerWheels = {};
-let aiCars = [];
-let ready = false, raceOn = false, raceDone = false;
+let playerMesh = null, playerWheels = [];
+let ready = false;
 let camMode = 0;
 const camTgt = new THREE.Vector3();
 
@@ -544,40 +609,15 @@ function updateCam(s) {
 }
 
 // ── HUD ───────────────────────────────────────────────────────────────────────
-function fmt(s) { const m=Math.floor(s/60),r=s%60; return `${m}:${r.toFixed(3).padStart(6,'0')}`; }
-
 function hudUpdate(s) {
   document.getElementById('spd').textContent  = Math.round(s.speed * 3.6);
   document.getElementById('gear').textContent = ['N','1','2','3','4','5','6'][s.gear] || s.gear;
-  document.getElementById('lap-n').textContent = `${Math.min(s.lap+1, TOTAL_LAPS)} / ${TOTAL_LAPS}`;
-  document.getElementById('t-cur').textContent  = fmt(s.lapTime);
-  document.getElementById('t-best').textContent = s.bestLap===Infinity ? 'BEST: --:--.---' : 'BEST: '+fmt(s.bestLap);
 
   const segs = rpmWrap.children, lit = Math.round(s.rpm * 12);
   for (let i=0; i<12; i++) {
     const f = i/12;
     segs[i].style.background = i < lit ? (f>0.83?'#e10600':f>0.62?'#ffb700':'#00cc66') : '#111';
   }
-
-  const all = [{s:pState,n:'YOU'}, ...aiStates.map((s,i)=>({s,n:AI_NAMES[i]}))];
-  all.sort((a,b) => (b.s.lap + b.s.trackT) - (a.s.lap + a.s.trackT));
-  const pl = document.getElementById('pos-list'); pl.innerHTML = '';
-  all.forEach((e,i) => {
-    const r = document.createElement('div'); r.className = 'pr' + (e.n==='YOU'?' me':'');
-    const gap = (all[0].s.lap + all[0].s.trackT) - (e.s.lap + e.s.trackT);
-    r.innerHTML = `<span class="pn">${i+1}</span><span class="pm">${e.n}</span><span class="pg">${i===0?'LEAD':'+'+gap.toFixed(2)}</span>`;
-    pl.appendChild(r);
-  });
-}
-
-function endRace() {
-  raceDone = true;
-  const all = [{s:pState,n:'YOU'}, ...aiStates.map((s,i)=>({s,n:AI_NAMES[i]}))];
-  all.sort((a,b) => (b.s.lap+b.s.trackT)-(a.s.lap+a.s.trackT));
-  const pos = all.findIndex(e=>e.n==='YOU')+1;
-  document.getElementById('fin').style.display = 'block';
-  document.getElementById('fin-pos').textContent  = `FINISHED ${pos}${['st','nd','rd'][pos-1]||'th'} PLACE`;
-  document.getElementById('fin-time').textContent = 'BEST LAP: '+(pState.bestLap===Infinity?'--':fmt(pState.bestLap));
 }
 
 // ── Place car on track ────────────────────────────────────────────────────────
@@ -587,22 +627,6 @@ function placeOnTrack(s, offset = 0) {
   const side = new THREE.Vector3(-tn.z, 0, tn.x).normalize();
   s.pos.copy(pt).addScaledVector(side, offset).setY(0.3);
   s.heading = Math.atan2(tn.x, tn.z);
-}
-
-// ── Countdown then race ───────────────────────────────────────────────────────
-function startCountdown() {
-  let c = 3;
-  const el = document.getElementById('go');
-  el.style.opacity = '1'; el.style.color = '#e10600';
-  const tick = () => {
-    if (c > 0) { el.textContent = c; c--; setTimeout(tick, 900); }
-    else {
-      el.textContent = 'GO!'; el.style.color = '#00ee44';
-      raceOn = true;          // ← race starts HERE
-      setTimeout(() => { el.style.opacity = '0'; }, 700);
-    }
-  };
-  tick();
 }
 
 // ── Load GLB buffer → build player car ───────────────────────────────────────
@@ -617,10 +641,6 @@ async function buildPlayerCar(buffer) {
 
   const { root, nodeObjs, names } = parseGLB(buffer);
 
-  // The GLB was exported from Marmoset with:
-  //   - 100× scale baked in
-  //   - Z-up convention (Y↔Z swap in matrix)
-  // Fix: scale and keep the baked model orientation; forward is handled via yaw offset.
   root.scale.setScalar(0.0600);
   root.rotation.set(0, 0, 0);
 
@@ -630,14 +650,14 @@ async function buildPlayerCar(buffer) {
   wrapper.add(cloneCarModel(root, 0xe10600));
   scene.add(wrapper);
   playerMesh = wrapper;
-  playerWheels = {
-    FL: playerMesh.getObjectByName('WheelFL'),
-    FR: playerMesh.getObjectByName('WheelFR'),
-    RL: playerMesh.getObjectByName('WheelRL'),
-    RR: playerMesh.getObjectByName('WheelRR'),
-  };
+  playerWheels = [
+    playerMesh.getObjectByName('WheelFL'),
+    playerMesh.getObjectByName('WheelFR'),
+    playerMesh.getObjectByName('WheelRL'),
+    playerMesh.getObjectByName('WheelRR'),
+  ].filter(Boolean);
 
-  await beginRace();
+  await beginDrive();
 }
 
 // ── Load car.glb automatically ───────────────────────────────────────────────
@@ -662,41 +682,29 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
 
-  if (ready && raceOn && !raceDone) {
+  if (ready) {
     const thr = (K.has('KeyW') || K.has('ArrowUp'))    ? 1 : 0;
     const brk = (K.has('KeyS') || K.has('ArrowDown'))  ? 1 : 0;
     const str = (K.has('KeyA') || K.has('ArrowLeft'))  ? 1
               : (K.has('KeyD') || K.has('ArrowRight')) ?  -1 : 0;
 
     physStep(pState, dt, thr, brk, str);
-    aiStates.forEach(s => aiStep(s, dt));
+
+    // Publish position every 100ms
+    if (!window.lastPublish || Date.now() - window.lastPublish > 100) {
+      publishPlayerState();
+      window.lastPublish = Date.now();
+    }
 
     if (playerMesh) {
       playerMesh.position.copy(pState.pos);
       playerMesh.rotation.y = pState.heading + MODEL_YAW_OFFSET;
       const ds = pState.speed * dt * 2.5;
-      Object.values(playerWheels).forEach(w => { if (w) w.rotation.x += ds; });
+      playerWheels.forEach(w => { if (w) w.rotation.x += ds; });
     }
-    aiCars.forEach(({ group, wheels }, i) => {
-      const s = aiStates[i];
-      group.position.copy(s.pos);
-      group.rotation.y = s.heading + MODEL_YAW_OFFSET;
-      const ds = s.speed * dt * 2.5;
-      wheels.forEach(w => w.rotation.x += ds);
-    });
 
     updateCam(pState);
     hudUpdate(pState);
-
-  } else if (ready && !raceOn) {
-    // Orbit camera during countdown
-    const t = Date.now() * 0.0003;
-    camera.position.set(
-      pState.pos.x + Math.cos(t) * 12,
-      pState.pos.y + 5,
-      pState.pos.z + Math.sin(t) * 12
-    );
-    camera.lookAt(pState.pos.clone().add(new THREE.Vector3(0,1,0)));
   }
 
   renderer.render(scene, camera);
