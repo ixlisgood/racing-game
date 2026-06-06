@@ -118,7 +118,7 @@ function initFirebase() {
       speed: pState.speed,
       gear: pState.gear,
       rpm: pState.rpm,
-      timestamp: firebase.database.ServerValue.TIMESTAMP
+      timestamp: Date.now()
     }).catch(err => console.error('Publish error:', err));
   }
 
@@ -127,7 +127,7 @@ function initFirebase() {
     for (const id in playersData) {
       if (id === playerId) continue;
       const data = playersData[id];
-      if (Date.now() - data.timestamp > 3000) continue;
+      if (!data.timestamp || Date.now() - data.timestamp > 3000) continue;
 
       if (!otherPlayers.has(id)) {
         const carGroup = new THREE.Group();
@@ -142,14 +142,14 @@ function initFirebase() {
         
         const pod = new THREE.Mesh(
           new THREE.BoxGeometry(0.7, 0.42, 2),
-          new THREE.MeshStandardMaterial({ color: 0x111111 })
+          new THREE.MeshStandardMaterial({ color: 0x1a1a1a, emissive: 0x0a0a0a })
         );
         pod.position.set(0, 0.62, 0.15);
         carGroup.add(pod);
         
         const wheels = [];
         const wgeo = new THREE.CylinderGeometry(0.37, 0.37, 0.44, 10);
-        const wmat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
+        const wmat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.95 });
         const wheelPos = [[0.93,0.37,1.55],[-0.93,0.37,1.55],[0.93,0.37,-1.55],[-0.93,0.37,-1.55]];
         
         wheelPos.forEach(pos => {
@@ -439,7 +439,7 @@ const MAX_SPD = 86, ACCEL = 28, BRAKEFORCE = 55, DRAG_K = 0.018, TURN = 1.55;
 const GEARS = [0, 18, 34, 50, 66, 80, MAX_SPD+5];
 const ROAD_HALF_WIDTH = 24.0;
 const ROAD_BARRIER_LIMIT = 29.0;
-const MODEL_YAW_OFFSET = -Math.PI / 2;
+const MODEL_YAW_OFFSET = 0;
 const trackCollisionOffset = new THREE.Vector3();
 const trackCollisionPush = new THREE.Vector3();
 const trackCollisionSide = new THREE.Vector3();
@@ -531,15 +531,16 @@ function recolorCarGroup(group, color) {
       mat.emissive = new THREE.Color(0x110000);
       mat.emissiveIntensity = 0.08;
     } else if (name.includes('glass')) {
-      mat.color.set(0x89b5ff);
-      mat.roughness = 0.08;
-      mat.metalness = 0.9;
+      mat.color.set(0x0a0a0a);
+      mat.emissive = new THREE.Color(0x050505);
+      mat.roughness = 0.9;
+      mat.metalness = 0.1;
       mat.transparent = true;
-      mat.opacity = 0.35;
+      mat.opacity = 0.8;
     } else if (name.includes('wheel') || name.includes('tyre') || name.includes('rim')) {
-      mat.color.set(0x111111);
+      mat.color.set(0x0a0a0a);
       mat.roughness = 0.95;
-      mat.metalness = 0.2;
+      mat.metalness = 0.1;
     }
     child.material = mat;
     child.castShadow = true;
@@ -580,14 +581,14 @@ async function buildFallbackPlayerCar() {
   const bm = new THREE.MeshStandardMaterial({ color: 0xe10600, metalness: 0.6, roughness: 0.3 });
   const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.38, 4.4), bm);
   body.position.y = 0.28; g.add(body);
-  const pod = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.42, 2), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+  const pod = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.42, 2), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, emissive: 0x0a0a0a }));
   pod.position.set(0, 0.62, 0.15); g.add(pod);
   const fw = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.07, 0.45), bm);
   fw.position.set(0, 0.18, 2.05); g.add(fw);
   const rw = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.32, 0.28), bm);
   rw.position.set(0, 0.85, -2.0); g.add(rw);
   const wgeo = new THREE.CylinderGeometry(0.37, 0.37, 0.44, 10);
-  const wmat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
+  const wmat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.95 });
   const ws = [[0.93,0.37,1.55],[-0.93,0.37,1.55],[0.93,0.37,-1.55],[-0.93,0.37,-1.55]].map(p => {
     const w = new THREE.Mesh(wgeo, wmat); w.rotation.z = Math.PI/2; w.position.set(...p); g.add(w); return w;
   });
