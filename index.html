@@ -91,9 +91,10 @@ scene.fog = new THREE.FogExp2(0x7ec8e3, 0.0007);
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.3, 3000);
 
 // ── Lights ──────────────────────────────────────────────────────────────────
-scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-const sun = new THREE.DirectionalLight(0xfff8e7, 2.0);
+scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+const sun = new THREE.DirectionalLight(0xfff8e7, 2.2);
 sun.position.set(150, 350, 80);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 0.45));
 sun.castShadow = true;
 sun.shadow.mapSize.set(4096, 4096);
 sun.shadow.camera.left   = -600; sun.shadow.camera.right  =  600;
@@ -302,6 +303,7 @@ const MAX_SPD = 72, ACCEL = 22, BRAKEFORCE = 50, DRAG_K = 0.020, TURN = 1.65;
 const GEARS = [0, 15, 28, 43, 56, 68, MAX_SPD+5];
 const ROAD_HALF_WIDTH = 14.0;
 const ROAD_BARRIER_LIMIT = 17.0;
+const MODEL_YAW_OFFSET = -Math.PI / 2;
 const trackCollisionOffset = new THREE.Vector3();
 const trackCollisionPush = new THREE.Vector3();
 const trackCollisionSide = new THREE.Vector3();
@@ -312,13 +314,12 @@ function applyTrackCollision(s) {
   trackCollisionSide.set(-tangent.z, 0, tangent.x).normalize();
   trackCollisionOffset.copy(s.pos).sub(center);
   const offset = trackCollisionOffset.dot(trackCollisionSide);
-  const absOffset = Math.abs(offset); + 0.08;
-  trackCollisionPush.copy(trackCollisionSide).multiplyScalar(-Math.sign(offset) * penetration);
-  s.pos.add(trackCollisionPush);
-  s.speed *= 0.55;
-  if (absOffset > ROAD_BARRIER_LIMIT) s.speed *= 0.3
-  s.speed *= 0.7;
-  if (absOffset > ROAD_BARRIER_LIMIT) s.speed *= 0.45;
+  const absOffset = Math.abs(offset);
+  if (absOffset <= ROAD_HALF_WIDTH) return;
+  const targetOffset = Math.sign(offset) * ROAD_HALF_WIDTH;
+  s.pos.copy(center).addScaledVector(trackCollisionSide, targetOffset);
+  s.speed *= 0.45;
+  if (absOffset > ROAD_BARRIER_LIMIT) s.speed *= 0.2;
 }
 
 function mkState(tOff, aiIdx) {
@@ -460,13 +461,15 @@ async function beginRace() {
   playerMesh.rotation.y = pState.heading;
 
   for (let i = 0; i < AI_NAMES.length; i++) {
-    const group = cloneCarModel(playerTemplate, AI_COLS[i]);
-    scene.add(group);
-    const wheels = ['WheelFL','WheelFR','WheelRL','WheelRR'].map(name => group.getObjectByName(name)).filter(Boolean);
-    aiCars.push({ group, wheels });
+    const wrapper = new THREE.Group();
+    wrapper.rotation.y = MODEL_YAW_OFFSET;
+    wrapper.add(cloneCarModel(playerTemplate, AI_COLS[i]));
+    scene.add(wrapper);
+    const wheels = ['WheelFL','WheelFR','WheelRL','WheelRR'].map(name => wrapper.getObjectByName(name)).filter(Boolean);
+    aiCars.push({ group: wrapper, wheels });
     placeOnTrack(aiStates[i]);
-    group.position.copy(aiStates[i].pos);
-    group.rotation.y = aiStates[i].heading;
+    wrapper.position.copy(aiStates[i].pos);
+    wrapper.rotation.y = aiStates[i].heading;
   }
 
   setLoad(100, 'READY!');
@@ -600,14 +603,16 @@ async function buildPlayerCar(buffer) {
   // The GLB was exported from Marmoset with:
   //   - 100× scale baked in
   //   - Z-up convention (Y↔Z swap in matrix)
-  // Fix: scale, rotate X -90° and flip Yaw so the car points forward.
-  root.scale.setScalar(0.035);
-  root.rotation.set(-Math.PI / 2, Math.PI, 0);
+  // Fix: scale and rotate so the model faces forward.
+  root.scale.setScalar(0.065);
+  root.rotation.set(-Math.PI / 2, -Math.PI / 2, 0);
 
   playerTemplate = root;
-  const playerClone = cloneCarModel(root, 0xe10600);
-  scene.add(playerClone);
-  playerMesh = playerClone;
+  const wrapper = new THREE.Group();
+  wrapper.rotation.y = MODEL_YAW_OFFSET;
+  wrapper.add(cloneCarModel(root, 0xe10600));
+  scene.add(wrapper);
+  playerMesh = wrapper;
   playerWheels = {
     FL: playerMesh.getObjectByName('WheelFL'),
     FR: playerMesh.getObjectByName('WheelFR'),
