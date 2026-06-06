@@ -617,7 +617,7 @@ async function buildPlayerCar(buffer) {
   //   - Z-up convention (Y↔Z swap in matrix)
   // Fix: scale and rotate so the model faces forward.
   root.scale.setScalar(0.065);
-  root.rotation.set(-Math.PI / 0, 0, 0);
+  root.rotation.set(-Math.PI / 1, 0, 0);
 
   playerTemplate = root;
   const wrapper = new THREE.Group();
@@ -660,8 +660,8 @@ function animate() {
   if (ready && raceOn && !raceDone) {
     const thr = (K.has('KeyW') || K.has('ArrowUp'))    ? 1 : 0;
     const brk = (K.has('KeyS') || K.has('ArrowDown'))  ? 1 : 0;
-    const str = (K.has('KeyA') || K.has('ArrowLeft'))  ? -1
-              : (K.has('KeyD') || K.has('ArrowRight')) ?  1 : 0;
+    const str = (K.has('KeyA') || K.has('ArrowLeft'))  ? 1
+              : (K.has('KeyD') || K.has('ArrowRight')) ?  -1 : 0;
 
     physStep(pState, dt, thr, brk, str);
     aiStates.forEach(s => aiStep(s, dt));
