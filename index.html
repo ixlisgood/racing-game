@@ -276,16 +276,13 @@ function parseGLB(buffer) {
   const nodeObjs = (gltf.nodes||[]).map(node => {
     const obj = node.mesh!==undefined ? meshGroups[node.mesh] : new THREE.Group();
     obj.name = node.name||'';
-    // Store raw translation from matrix col 3 (before we override)
     if (node.matrix) {
-      // glTF matrix is column-major; translation = col 3 = indices [12,13,14]
-      obj.userData.tx = node.matrix[12];
-      obj.userData.ty = node.matrix[13];
-      obj.userData.tz = node.matrix[14];
-    } else if (node.translation) {
-      obj.userData.tx = node.translation[0];
-      obj.userData.ty = node.translation[1];
-      obj.userData.tz = node.translation[2];
+      const mat = new THREE.Matrix4().fromArray(node.matrix);
+      obj.applyMatrix4(mat);
+    } else {
+      if (node.translation) obj.position.fromArray(node.translation);
+      if (node.rotation) obj.quaternion.fromArray(node.rotation);
+      if (node.scale) obj.scale.fromArray(node.scale);
     }
     return obj;
   });
@@ -316,10 +313,10 @@ function applyTrackCollision(s) {
   const absOffset = Math.abs(offset);
   if (absOffset <= ROAD_HALF_WIDTH) return;
   const penetration = absOffset - ROAD_HALF_WIDTH;
-  trackCollisionPush.copy(trackCollisionSide).multiplyScalar(-Math.sign(offset) * Math.min(penetration, 0.24));
+  trackCollisionPush.copy(trackCollisionSide).multiplyScalar(-Math.sign(offset) * penetration);
   s.pos.add(trackCollisionPush);
-  s.speed *= 0.82;
-  if (absOffset > ROAD_BARRIER_LIMIT) s.speed *= 0.7;
+  s.speed *= 0.7;
+  if (absOffset > ROAD_BARRIER_LIMIT) s.speed *= 0.45;
 }
 
 function mkState(tOff, aiIdx) {
