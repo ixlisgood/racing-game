@@ -301,6 +301,26 @@ const AI_COLS  = [0xffffff, 0x0044cc, 0xff2200, 0xee3311, 0xff8800];
 const TOTAL_LAPS = 3;
 const MAX_SPD = 72, ACCEL = 22, BRAKEFORCE = 50, DRAG_K = 0.020, TURN = 1.65;
 const GEARS = [0, 15, 28, 43, 56, 68, MAX_SPD+5];
+const ROAD_HALF_WIDTH = 14.0;
+const ROAD_BARRIER_LIMIT = 17.0;
+const trackCollisionOffset = new THREE.Vector3();
+const trackCollisionPush = new THREE.Vector3();
+const trackCollisionSide = new THREE.Vector3();
+
+function applyTrackCollision(s) {
+  const center = trackCurve.getPointAt(s.trackT);
+  const tangent = trackCurve.getTangentAt(s.trackT);
+  trackCollisionSide.set(-tangent.z, 0, tangent.x).normalize();
+  trackCollisionOffset.copy(s.pos).sub(center);
+  const offset = trackCollisionOffset.dot(trackCollisionSide);
+  const absOffset = Math.abs(offset);
+  if (absOffset <= ROAD_HALF_WIDTH) return;
+  const penetration = absOffset - ROAD_HALF_WIDTH;
+  trackCollisionPush.copy(trackCollisionSide).multiplyScalar(-Math.sign(offset) * Math.min(penetration, 0.24));
+  s.pos.add(trackCollisionPush);
+  s.speed *= 0.82;
+  if (absOffset > ROAD_BARRIER_LIMIT) s.speed *= 0.7;
+}
 
 function mkState(tOff, aiIdx) {
   return {
@@ -347,6 +367,7 @@ function physStep(s, dt, thr, brk, str) {
   s.rpm = Math.max(0.1, Math.min(1, (s.speed - gMin) / (gMax - gMin)));
   // Track progress
   s.trackT = findT(s.pos, s.trackT);
+  applyTrackCollision(s);
   // Lap detection: crossing 0 from > 0.88
   if (s.lastT > 0.88 && s.trackT < 0.12) {
     s.lap++;
@@ -390,6 +411,46 @@ function mkAICar(col) {
   });
   g.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
   return { group: g, wheels: ws };
+}
+
+function mkFallbackPlayerCar() {
+  return mkAICar(0xe10600);
+}
+
+async function beginRace() {
+  setLoad(90, 'PLACING CARS...');
+  await new Promise(r => setTimeout(r, 20));
+
+  placeOnTrack(pState);
+  playerMesh.position.copy(pState.pos);
+  playerMesh.rotation.y = pState.heading;
+
+  for (let i = 0; i < AI_NAMES.length; i++) {
+    const { group, wheels } = mkAICar(AI_COLS[i]);
+    scene.add(group);
+    aiCars.push({ group, wheels });
+    placeOnTrack(aiStates[i]);
+    group.position.copy(aiStates[i].pos);
+    group.rotation.y = aiStates[i].heading;
+  }
+
+  setLoad(100, 'READY!');
+  await new Promise(r => setTimeout(r, 350));
+
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('hud').style.display = 'block';
+  ready = true;
+  startCountdown();
+}
+
+async function buildFallbackPlayerCar() {
+  setLoad(60, 'USING FALLBACK CAR...');
+  await new Promise(r => setTimeout(r, 20));
+  const { group, wheels } = mkFallbackPlayerCar();
+  scene.add(group);
+  playerMesh = group;
+  playerWheels = wheels;
+  await beginRace();
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -520,31 +581,7 @@ async function buildPlayerCar(buffer) {
   scene.add(wrapper);
   playerMesh = wrapper;
 
-  setLoad(90, 'PLACING CARS...');
-  await new Promise(r => setTimeout(r, 20));
-
-  // Place player
-  placeOnTrack(pState);
-  playerMesh.position.copy(pState.pos);
-  playerMesh.rotation.y = pState.heading;
-
-  // AI cars
-  for (let i=0; i<AI_NAMES.length; i++) {
-    const { group, wheels } = mkAICar(AI_COLS[i]);
-    scene.add(group);
-    aiCars.push({ group, wheels });
-    placeOnTrack(aiStates[i]);
-    group.position.copy(aiStates[i].pos);
-    group.rotation.y = aiStates[i].heading;
-  }
-
-  setLoad(100, 'READY!');
-  await new Promise(r => setTimeout(r, 350));
-
-  document.getElementById('loading').style.display = 'none';
-  document.getElementById('hud').style.display = 'block';
-  ready = true;
-  startCountdown();
+  await beginRace();
 }
 
 // ── Load car.glb automatically ───────────────────────────────────────────────
@@ -557,8 +594,9 @@ async function buildPlayerCar(buffer) {
     const buf = await res.arrayBuffer();
     await buildPlayerCar(buf);
   } catch(e) {
-    document.getElementById('load-msg').textContent = 'ERROR: car.glb not found in repo root';
-    console.error(e);
+    console.warn('car.glb load failed, using fallback car:', e);
+    document.getElementById('load-msg').textContent = 'MODEL LOAD FAILED — USING SIMPLE CAR';
+    await buildFallbackPlayerCar();
   }
 })();
 
